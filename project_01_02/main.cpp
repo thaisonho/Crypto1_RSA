@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <ctime>
 #include <cstdlib>
+#include <iomanip>
 
 using namespace std;
 
@@ -39,11 +40,11 @@ public:
     // input format h_0*16^0 + h_1*16^1 + ... (first char is LSB)
     BigInt(const string& hex) : size(1) {
         memset(data, 0, sizeof(data));
-        
+
         if (hex.empty() || hex == "0") {
             return;
         }
-        
+
         for (int i = 0; i < (int)hex.length(); i++) {
             char c = hex[i];  // h_i is at position i (left to right)
             int digit;
@@ -51,12 +52,12 @@ public:
             else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
             else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
             else continue;
-            
+
             // h_i contributes to bit positions [4*i, 4*i+3]
             int bitPos = i * 4;
             int wordPos = bitPos / 32;
             int bitInWord = bitPos % 32;
-            
+
             if (wordPos < MAX_WORDS) {
                 data[wordPos] |= ((uint32_t)digit << bitInWord);
                 if (bitInWord > 28 && wordPos + 1 < MAX_WORDS) {
@@ -64,9 +65,21 @@ public:
                 }
             }
         }
-        
+
         size = MAX_WORDS;
         normalize();
+    }
+
+    BigInt& operator=(const BigInt& other) {
+        if (this != &other) {
+            memcpy(data, other.data, sizeof(data));
+            size = other.size;
+        }
+        return *this;
+    }
+    
+    BigInt(const BigInt& other) : size(other.size) {
+        memcpy(data, other.data, sizeof(data));
     }
 
     bool isZero() const {
@@ -146,7 +159,7 @@ public:
         BigInt result;
         uint64_t carry = 0;
         int maxSize = max(size, other.size);
-        
+
         for (int i = 0; i < maxSize || carry; i++) {
             uint64_t sum = carry;
             if (i < size) sum += data[i];
@@ -155,7 +168,7 @@ public:
             carry = sum >> 32;
             result.size = i + 1;
         }
-        
+
         result.normalize();
         return result;
     }
@@ -166,43 +179,45 @@ public:
         if (*this < other) {
             return BigInt(0);
         }
-        
+
         BigInt result;
         int64_t borrow = 0;
-        
+
         for (int i = 0; i < size; i++) {
             int64_t diff = (int64_t)data[i] - borrow;
             if (i < other.size) diff -= other.data[i];
-            
+
             if (diff < 0) {
                 diff += 0x100000000LL; // eg 16^8 = 2^32
                 borrow = 1;
-            } else {
+            }
+            else {
                 borrow = 0;
             }
             result.data[i] = (uint32_t)diff;
             result.size = i + 1;
         }
-        
+
         result.normalize();
         return result;
     }
 
     BigInt shiftLeft(int n) const {
         if (n == 0 || isZero()) return *this;
-        
+
         BigInt result;
         int wordShift = n / 32;
         int bitShift = n % 32;
-        
+
         result.size = size + wordShift + (bitShift > 0 ? 1 : 0);
         if (result.size > MAX_WORDS) result.size = MAX_WORDS;
-        
+
         if (bitShift == 0) {
             for (int i = 0; i < size && i + wordShift < MAX_WORDS; i++) {
                 result.data[i + wordShift] = data[i];
             }
-        } else {
+        }
+        else {
             uint64_t carry = 0;
             for (int i = 0; i < size && i + wordShift < MAX_WORDS; i++) {
                 uint64_t temp = ((uint64_t)data[i] << bitShift) | carry;
@@ -213,26 +228,26 @@ public:
                 result.data[wordShift + size] = (uint32_t)carry;
             }
         }
-        
+
         result.normalize();
         return result;
     }
 
     BigInt shiftRight(int n) const {
         if (n == 0 || isZero()) return *this;
-        
+
         BigInt result;
         int wordShift = n / 32;
         int bitShift = n % 32;
-        
+
         if (wordShift >= size) {
             return BigInt(0);
         }
-        
+
         for (int i = wordShift; i < size; i++) {
             result.data[i - wordShift] = data[i];
         }
-        
+
         if (bitShift > 0) {
             for (int i = 0; i < size - wordShift; i++) {
                 result.data[i] = result.data[i] >> bitShift;
@@ -241,7 +256,7 @@ public:
                 }
             }
         }
-        
+
         result.size = size - wordShift;
         result.normalize();
         return result;
@@ -250,7 +265,7 @@ public:
     BigInt operator*(const BigInt& other) const {
         BigInt result;
         result.size = min(size + other.size, MAX_WORDS);
-        
+
         for (int i = 0; i < size && i < MAX_WORDS; i++) {
             uint64_t carry = 0;
             for (int j = 0; j < other.size && i + j < MAX_WORDS; j++) {
@@ -263,7 +278,7 @@ public:
                 result.data[i + other.size] += (uint32_t)carry;
             }
         }
-        
+
         result.normalize();
         return result;
     }
@@ -271,23 +286,23 @@ public:
     void divMod(const BigInt& divisor, BigInt& quotient, BigInt& remainder) const {
         quotient = BigInt(0);
         remainder = BigInt(0);
-        
+
         if (divisor.isZero()) return;
         if (*this < divisor) {
             remainder = *this;
             return;
         }
-        
+
         if (divisor.isOne()) {
             quotient = *this;
             return;
         }
-        
+
         // Fast path: single-word divisor
         if (divisor.size == 1 && divisor.data[0] != 0) {
             uint64_t div = divisor.data[0];
             uint64_t rem = 0;
-            
+
             quotient.size = size;
             for (int i = size - 1; i >= 0; i--) {
                 rem = (rem << 32) | data[i];
@@ -295,29 +310,29 @@ public:
                 rem = rem % div;
             }
             quotient.normalize();
-            
+
             remainder.data[0] = (uint32_t)rem;
             remainder.size = 1;
             remainder.normalize();
             return;
         }
-        
+
         // Binary long division for multi-word
         int dividendBits = bitLength();
-        
+
         for (int i = dividendBits - 1; i >= 0; i--) {
             remainder = remainder.shiftLeft(1);
             if (getBit(i)) {
                 remainder.data[0] |= 1;
                 remainder.normalize();
             }
-            
+
             if (remainder >= divisor) {
                 remainder = remainder - divisor;
                 quotient.setBit(i);
             }
         }
-        
+
         quotient.normalize();
         remainder.normalize();
     }
@@ -346,20 +361,20 @@ public:
     // Modular multiplication using optimized multiplication + reduction
     static BigInt mulMod(const BigInt& a, const BigInt& b, const BigInt& n) {
         if (n.isOne()) return BigInt(0);
-        
+
         // Use optimized multiplication
         BigInt product = a * b;
-        
+
         // Fast reduction for result
         return product % n;
     }
 
     static BigInt powerMod(const BigInt& base, const BigInt& exp, const BigInt& n) {
         if (n.isOne()) return BigInt(0);
-        
+
         BigInt result(1);
         BigInt b = base % n;
-        
+
         int bits = exp.bitLength();
         for (int i = 0; i < bits; i++) {
             if (exp.getBit(i)) {
@@ -367,7 +382,7 @@ public:
             }
             b = mulMod(b, b, n);
         }
-        
+
         return result;
     }
 
@@ -375,161 +390,147 @@ public:
     static BigInt random(const BigInt& n) {
         BigInt result;
         int bits = n.bitLength();
-        
+
         for (int i = 0; i < bits; i++) {
             if (rand() % 2) {
                 result.setBit(i);
             }
         }
         result.normalize();
-        
+
         if (result >= n && !n.isZero()) {
             result = result % n;
         }
-        
+
         return result;
     }
 
     friend ostream& operator<<(ostream& os, const BigInt& n);
+    friend istream& operator>>(istream& is, BigInt& n);
 };
 
+istream& operator>>(istream& is, BigInt& n) {
+    string hex;
+    is >> hex;
+    n = BigInt(hex);
+    return is;
+}
+
 ostream& operator<<(ostream& os, const BigInt& n) {
-    os << hex;
-    os << n.data[n.size - 1];
-    for (int i = n.size - 2; i >= 0; i--) {
-        os.width(8);
-        os.fill('0');
-        os << n.data[i];
+    if (n.isZero()) {
+        os << "0";
+        return os;
     }
-    os << dec;
+
+    // Calculate total number of hex digits needed
+    int totalBits = n.bitLength();
+    int totalHexDigits = (totalBits + 3) / 4;  // Round up to nearest hex digit
+
+    // Output each hex digit from LSB to MSB (left to right)
+    for (int i = 0; i < totalHexDigits; i++) {
+        // Extract 4 bits starting at position i*4
+        int bitPos = i * 4;
+        int wordPos = bitPos / 32;
+        int bitInWord = bitPos % 32;
+
+        int digit = 0;
+        if (wordPos < n.size) {
+            digit = (n.data[wordPos] >> bitInWord) & 0xF;
+
+            // Handle case where hex digit spans two words
+            if (bitInWord > 28 && wordPos + 1 < n.size) {
+                int bitsFromNextWord = bitInWord - 28;
+                digit |= (n.data[wordPos + 1] & ((1 << bitsFromNextWord) - 1)) << (32 - bitInWord);
+            }
+        }
+
+        // Output as hex character
+        if (digit < 10) {
+            os << (char)('0' + digit);
+        }
+        else {
+            os << (char)('A' + digit - 10);
+        }
+    }
+
     return os;
 }
 
-// Miller-Rabin 1st
-bool millerRabinTest(const BigInt& n, const BigInt& a) {
-    BigInt n_minus_1 = n - BigInt(1);
-    
-    int s = 0;
-    BigInt d = n_minus_1;
-    while (d.isEven()) {
-        s++;
-        d = d.shiftRight(1);
-    }
-    
-    BigInt x = BigInt::powerMod(a, d, n);
-    
-    if (x == BigInt(1) || x == n_minus_1) {
-        return true;
-    }
-    
-    for (int i = 0; i < s - 1; i++) {
-        x = BigInt::mulMod(x, x, n);
-        if (x == n_minus_1) {
-            return true;
-        }
-        if (x == BigInt(1)) {
-            return false;
-        }
-    }
-    
-    return false;
+BigInt phi_euler(const BigInt& p, const BigInt& q) {
+    BigInt one(1);
+    return (p - one) * (q - one);
 }
 
-bool millerRabin(const BigInt& n, int iterations = 20) {
-    if (n < BigInt(2)) return false;
-    if (n == BigInt(2) || n == BigInt(3)) return true;
-    if (n.isEven()) return false;
-    
-    // Deterministic witnesses for better reliability
-    uint64_t deterministicWitnesses[] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37};
-    int numDeterministic = sizeof(deterministicWitnesses) / sizeof(deterministicWitnesses[0]);
-    
-    for (int i = 0; i < numDeterministic && i < iterations; i++) {
-        BigInt a(deterministicWitnesses[i]);
-        if (a >= n) break;
-        
-        if (!millerRabinTest(n, a)) {
-            return false;
+BigInt gcd(const BigInt& a, const BigInt& b) {
+    BigInt res(1), x = a, y = b;
+
+    while (x.isEven() && y.isEven()) {
+        x = x.shiftRight(1);
+        y = y.shiftRight(1);
+        res = res.shiftLeft(1);
+    }
+
+    while (!x.isZero()) {
+        while (x.isEven()) {
+            x = x.shiftRight(1);
+        }
+        while (y.isEven()) {
+            y = y.shiftRight(1);
+        }
+        if (x >= y) {
+            x = x - y;
+        }
+        else {
+            y = y - x;
         }
     }
-    
-    // Random witnesses for additional iterations
-    for (int i = numDeterministic; i < iterations; i++) {
-        BigInt a;
-        
-        if (n < BigInt(4)) {
-            a = BigInt(2);
-        } else {
-            BigInt range = n - BigInt(3);
-            a = BigInt::random(range) + BigInt(2);
-            if (a >= n - BigInt(1)) a = BigInt(2);
+    return res * y;
+}
+
+BigInt modInverse(const BigInt& e, const BigInt& phi) {
+    BigInt g = gcd(e, phi);
+    if (!g.isOne()) {
+        return BigInt(0);  // No inverse exists
+    }
+
+    BigInt r0 = phi, r1 = e;
+    BigInt s0(0), s1(1);
+
+    while (!r1.isZero()) {
+        BigInt q = r0 / r1;
+        BigInt r2 = r0 - q * r1;
+
+        BigInt qTimesS1 = q * s1;
+        BigInt s2;
+
+        if (qTimesS1 <= s0) {
+            s2 = s0 - qTimesS1;
         }
-        
-        if (!millerRabinTest(n, a)) {
-            return false;
+        else {
+            // s0 - q*s1 is negative, so add phi to make it positive
+            BigInt diff = qTimesS1 - s0;
+            s2 = phi - (diff % phi);
         }
+
+        r0 = r1;
+        r1 = r2;
+        s0 = s1;
+        s1 = s2;
     }
-    
-    return true;
+
+    return s0 % phi;
 }
 
-// Trial division for small primes
-bool trialDivision(const BigInt& n) {
-    if (n == BigInt(2) || n == BigInt(3) || n == BigInt(5) || n == BigInt(7)) return true;
-    
-    int smallPrimes[] = {3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97};
-    
-    for (int p : smallPrimes) {
-        BigInt prime(p);
-        if (n == prime) return true;
-        if ((n % prime).isZero()) return false;
-    }
-    return true;
-}
+int main() {
+    srand((unsigned int)time(0));
 
-bool isPrime(const BigInt& n) {
-    if (n < BigInt(2)) return false;
-    if (n == BigInt(2)) return true;
-    if (n.isEven()) return false;
-    
-    if (!trialDivision(n)) return false;
-    
-    return millerRabin(n, 20);
-}
-
-int main(int argc, char* argv[]) {
-    srand(time(0));
-    
-    if (argc != 3) {
-        cerr << "Usage: " << argv[0] << " <input_file> <output_file>" << endl;
-        return 1;
+    BigInt p, q, e;
+    cin >> p >> q >> e;
+    BigInt d = modInverse(e, phi_euler(p, q));
+    if (d.isZero()) {
+        cout << -1 << endl;
     }
-    
-    ifstream inFile(argv[1]);
-    if (!inFile) {
-        cerr << "Cannot open input file: " << argv[1] << endl;
-        return 1;
+    else {
+        cout << d << endl;
     }
-    
-    string hexString;
-    getline(inFile, hexString);
-    inFile.close();
-    
-    // Remove whitespace
-    hexString.erase(remove_if(hexString.begin(), hexString.end(), ::isspace), hexString.end());
-    
-    BigInt n(hexString);
-    
-    bool result = isPrime(n);
-    
-    ofstream outFile(argv[2]);
-    if (!outFile) {
-        cerr << "Cannot open output file: " << argv[2] << endl;
-        return 1;
-    }
-    
-    outFile << (result ? "1" : "0") << endl;
-    outFile.close();
-    
-    return 0;
 }

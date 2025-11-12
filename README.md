@@ -3,6 +3,3 @@
 ## Overview
 
 This project is from Introduction to Cryptography course.
-
-Project structure:
-

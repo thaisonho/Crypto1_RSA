@@ -393,18 +393,52 @@ public:
     friend ostream& operator<<(ostream& os, const BigInt& n);
 };
 
-ostream& operator<<(ostream& os, const BigInt& n) {
-    os << hex;
-    os << n.data[n.size - 1];
-    for (int i = n.size - 2; i >= 0; i--) {
-        os.width(8);
-        os.fill('0');
-        os << n.data[i];
-    }
-    os << dec;
-    return os;
+istream& operator>>(istream& is, BigInt& n) {
+    string hex;
+    is >> hex;
+    n = BigInt(hex);
+    return is;
 }
 
+ostream& operator<<(ostream& os, const BigInt& n) {
+    if (n.isZero()) {
+        os << "0";
+        return os;
+    }
+
+    // Calculate total number of hex digits needed
+    int totalBits = n.bitLength();
+    int totalHexDigits = (totalBits + 3) / 4;  // Round up to nearest hex digit
+
+    // Output each hex digit from LSB to MSB (left to right)
+    for (int i = 0; i < totalHexDigits; i++) {
+        // Extract 4 bits starting at position i*4
+        int bitPos = i * 4;
+        int wordPos = bitPos / 32;
+        int bitInWord = bitPos % 32;
+
+        int digit = 0;
+        if (wordPos < n.size) {
+            digit = (n.data[wordPos] >> bitInWord) & 0xF;
+
+            // Handle case where hex digit spans two words
+            if (bitInWord > 28 && wordPos + 1 < n.size) {
+                int bitsFromNextWord = bitInWord - 28;
+                digit |= (n.data[wordPos + 1] & ((1 << bitsFromNextWord) - 1)) << (32 - bitInWord);
+            }
+        }
+
+        // Output as hex character
+        if (digit < 10) {
+            os << (char)('0' + digit);
+        }
+        else {
+            os << (char)('A' + digit - 10);
+        }
+    }
+
+    return os;
+}
 // Miller-Rabin 1st
 bool millerRabinTest(const BigInt& n, const BigInt& a) {
     BigInt n_minus_1 = n - BigInt(1);
@@ -512,7 +546,7 @@ int main(int argc, char* argv[]) {
     }
     
     string hexString;
-    getline(inFile, hexString);
+    inFile >> hexString;
     inFile.close();
     
     // Remove whitespace

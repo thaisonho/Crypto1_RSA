@@ -34,13 +34,9 @@
 
 # Executables
 *.exe
-*.out
 *.app
 # linux executable
 main
-
-# Input files
-*.inp
 
 # debug information files
 *.dwo

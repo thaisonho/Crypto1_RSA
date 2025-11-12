@@ -12,7 +12,8 @@ using namespace std;
 // BigInt class using bit-wise manipulation with 32-bit words
 class BigInt {
 private:
-    enum { MAX_WORDS = 34 }; // 512 bits * 2 / 32 = 32 words + 2 for safety (for multiplication)
+    // Only need space for 512-bit numbers since we do modular arithmetic
+    enum { MAX_WORDS = 17 }; // 512 bits / 32 = 16 words + 1 for safety
     uint32_t data[MAX_WORDS];
     int size; // number of significant words
 
@@ -255,37 +256,7 @@ public:
         return result;
     }
 
-    BigInt operator*(const BigInt& other) const {
-        BigInt result;
-        memset(result.data, 0, sizeof(result.data)); // Ensure all zeros
-        
-        for (int i = 0; i < size; i++) {
-            uint64_t carry = 0;
-            for (int j = 0; j < other.size; j++) {
-                int k = i + j;
-                if (k >= MAX_WORDS) break;
-                
-                uint64_t prod = (uint64_t)data[i] * other.data[j];
-                uint64_t sum = (uint64_t)result.data[k] + prod + carry;
-                result.data[k] = (uint32_t)(sum & 0xFFFFFFFF);
-                carry = sum >> 32;
-            }
-            
-            // Propagate remaining carry
-            int k = i + other.size;
-            while (carry && k < MAX_WORDS) {
-                uint64_t sum = (uint64_t)result.data[k] + carry;
-                result.data[k] = (uint32_t)(sum & 0xFFFFFFFF);
-                carry = sum >> 32;
-                k++;
-            }
-        }
-        
-        int newSize = size + other.size;
-        result.size = (newSize < MAX_WORDS) ? newSize : MAX_WORDS;
-        result.normalize();
-        return result;
-    }
+
 
     // Division and modulo - optimized version
     void divMod(const BigInt& divisor, BigInt& quotient, BigInt& remainder) const {
@@ -360,13 +331,92 @@ public:
         return result;
     }
 
-    // Modular multiplication: (a * b) mod n
+    // Helper structure for extended multiplication
+    struct ExtendedBigInt {
+        static const int EXT_MAX_WORDS = 34;
+        uint32_t data[EXT_MAX_WORDS];
+        int size;
+        
+        ExtendedBigInt() : size(1) {
+            memset(data, 0, sizeof(data));
+        }
+        
+        void normalize() {
+            while (size > 1 && data[size - 1] == 0) {
+                size--;
+            }
+        }
+        
+        bool getBit(int pos) const {
+            int wordIdx = pos / 32;
+            int bitIdx = pos % 32;
+            if (wordIdx >= size) return false;
+            return (data[wordIdx] >> bitIdx) & 1;
+        }
+        
+        int bitLength() const {
+            if (size == 1 && data[0] == 0) return 0;
+            int len = (size - 1) * 32;
+            uint32_t top = data[size - 1];
+            while (top > 0) {
+                len++;
+                top >>= 1;
+            }
+            return len;
+        }
+    };
+    
+    // Modular multiplication: (a * b) mod n using extended buffer
     static BigInt mulMod(const BigInt& a, const BigInt& b, const BigInt& n) {
         if (n.isOne()) return BigInt(0);
         
-        // For small numbers or when a*b won't overflow our representation
-        BigInt product = a * b;
-        return product % n;
+        // Multiply into extended buffer
+        ExtendedBigInt product;
+        
+        for (int i = 0; i < a.size; i++) {
+            uint64_t carry = 0;
+            for (int j = 0; j < b.size; j++) {
+                int k = i + j;
+                if (k >= ExtendedBigInt::EXT_MAX_WORDS) break;
+                
+                uint64_t prod = (uint64_t)a.data[i] * b.data[j];
+                uint64_t sum = (uint64_t)product.data[k] + prod + carry;
+                product.data[k] = (uint32_t)(sum & 0xFFFFFFFF);
+                carry = sum >> 32;
+            }
+            
+            int k = i + b.size;
+            while (carry && k < ExtendedBigInt::EXT_MAX_WORDS) {
+                uint64_t sum = (uint64_t)product.data[k] + carry;
+                product.data[k] = (uint32_t)(sum & 0xFFFFFFFF);
+                carry = sum >> 32;
+                k++;
+            }
+        }
+        
+        product.size = a.size + b.size;
+        if (product.size > ExtendedBigInt::EXT_MAX_WORDS) {
+            product.size = ExtendedBigInt::EXT_MAX_WORDS;
+        }
+        product.normalize();
+        
+        // Perform modulo using long division
+        BigInt quotient, remainder;
+        
+        int productBits = product.bitLength();
+        for (int i = productBits - 1; i >= 0; i--) {
+            remainder = remainder.shiftLeft(1);
+            if (product.getBit(i)) {
+                remainder.data[0] |= 1;
+                remainder.normalize();
+            }
+            
+            if (remainder >= n) {
+                remainder = remainder - n;
+            }
+        }
+        
+        return remainder;
     }
 
     // Modular exponentiation: (base^exp) mod n

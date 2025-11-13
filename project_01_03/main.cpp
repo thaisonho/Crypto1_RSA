@@ -1,4 +1,4 @@
-#pragma GCC optimize("O3")
+//#pragma GCC optimize("O3")
 //#include <bits/stdc++.h>
 #include <cstdint>
 #include <cstring>

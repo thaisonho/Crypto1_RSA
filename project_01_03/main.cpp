@@ -11,7 +11,7 @@ using namespace std;
 
 class BigInt {
 private:
-    static constexpr int MAX_WORDS = 256;
+    static constexpr int MAX_WORDS = 64;
     uint32_t data[MAX_WORDS]{};
     int size = 1;
 
